@@ -1,0 +1,48 @@
+pluginManagement {
+    def flutterSdkPath = {
+        def properties = new Properties()
+        file("local.properties").withInputStream { properties.load(it) }
+        def flutterSdkPath = properties.getProperty("flutter.sdk")
+        assert flutterSdkPath != null, "flutter.sdk not set in local.properties"
+        return flutterSdkPath
+    }()
+
+    includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
+
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+plugins {
+    id "dev.flutter.flutter-plugin-loader" version "1.0.0"
+    id "com.android.application" version "8.3.2" apply false
+    id "org.jetbrains.kotlin.android" version "1.9.23" apply false
+}
+
+// --- Compatibility shim ---
+// Some published plugins (e.g. app_links 6.4.1, see
+// https://github.com/llfbandit/app_links/issues/234) still read
+// `flutter.compileSdkVersion` / `flutter.minSdkVersion` / etc. directly in
+// their android/build.gradle, a pattern from Flutter's old apply-based
+// Gradle integration. The new declarative "dev.flutter.flutter-gradle-plugin"
+// only creates that `flutter` extension on the `:app` module, so those
+// plugin subprojects fail to evaluate with
+// "Could not get unknown property 'flutter'". Provide the same defaults
+// Flutter's own Gradle plugin would, on every module that doesn't already
+// define them, before that module's build script runs.
+gradle.beforeProject { project ->
+    if (project.name == "app") return
+    if (!project.hasProperty("flutter")) {
+        project.ext.flutter = [
+            compileSdkVersion: 34,
+            minSdkVersion    : 21,
+            targetSdkVersion : 34,
+            ndkVersion       : "26.3.11579264",
+        ]
+    }
+}
+
+include ":app"

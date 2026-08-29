@@ -1,0 +1,79 @@
+name: Release APK
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+env:
+  FLUTTER_VERSION: '3.24.5'
+  JAVA_VERSION: '17'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & publish release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Flutter ${{ env.FLUTTER_VERSION }}
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: Generate Gradle wrapper
+        run: |
+          FLUTTER_SDK_PATH="$(dirname "$(dirname "$(command -v flutter)")")"
+          ANDROID_SDK_PATH="${ANDROID_HOME:-${ANDROID_SDK_ROOT}}"
+          {
+            echo "flutter.sdk=$FLUTTER_SDK_PATH"
+            echo "sdk.dir=$ANDROID_SDK_PATH"
+          } > android/local.properties
+
+          rm -rf /tmp/gradle-wrapper-gen
+          mkdir -p /tmp/gradle-wrapper-gen
+          touch /tmp/gradle-wrapper-gen/settings.gradle
+          (cd /tmp/gradle-wrapper-gen && gradle wrapper --gradle-version 8.6 --distribution-type all)
+
+          cp -r /tmp/gradle-wrapper-gen/gradle android/gradle
+          cp /tmp/gradle-wrapper-gen/gradlew android/gradlew
+          cp /tmp/gradle-wrapper-gen/gradlew.bat android/gradlew.bat
+          chmod +x android/gradlew
+
+      - name: Create .env from repository secrets
+        run: |
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
+          echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Rename APK with version tag
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk "dist/AttendX-${{ github.ref_name }}.apk"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/AttendX-${{ github.ref_name }}.apk
+          generate_release_notes: true
